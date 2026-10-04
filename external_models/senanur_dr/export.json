@@ -1,0 +1,24 @@
+{
+  "sweep": "baseline-6e66147526",
+  "variant": "baseline",
+  "folds": 5,
+  "input_size": 384,
+  "thresholds": [
+    0.6680000000000001,
+    1.1319999999999997,
+    2.3239999999999994,
+    3.3
+  ],
+  "preprocess": {
+    "size": 512,
+    "clahe": false,
+    "clip_limit": null,
+    "square_mode": "pad"
+  },
+  "parity": {
+    "images_checked": 40,
+    "max_abs_diff_raw": 3.075599670410156e-05,
+    "grade_mismatches": 0,
+    "tolerance": 0.001
+  }
+}

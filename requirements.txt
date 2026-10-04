@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+python-multipart
+torch
+torchvision
+onnxruntime
+opencv-python
+pillow
+numpy
+sqlalchemy
+psycopg2-binary
+python-dotenv
+cloudinary
+grad-cam==1.5.7
+fundus-lesions-toolkit
