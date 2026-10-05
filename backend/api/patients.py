@@ -39,7 +39,7 @@ from backend.database.models import Screening
 # ============================================================
 
 router = APIRouter(
-    prefix="/patients",
+    prefix="/api/v1/patients",
     tags=["Patients"],
 )
 

@@ -92,8 +92,8 @@ cloudinary.config(
 
 from backend.models.dr_classifier import create_model
 
-from backend.models.quality_checker import (
-    ImageQualityChecker
+from backend.services.quality_service import (
+    QualityService
 )
 
 from backend.models.lesion_detector import (
@@ -329,15 +329,15 @@ class ScreeningService:
         # ====================================================
 
         print(
-            "\nLoading image quality checker..."
+            "\nLoading image quality service..."
         )
 
-        self.quality_checker = (
-            ImageQualityChecker()
+        self.quality_service = (
+            QualityService()
         )
 
         print(
-            "Image quality checker loaded."
+            "Image quality service loaded."
         )
 
         # ====================================================
@@ -1168,9 +1168,13 @@ class ScreeningService:
             )
         )
 
+        pil_image = Image.fromarray(
+            rgb_image
+        ).convert("RGB")
+
         return (
-            self.quality_checker.analyze(
-                rgb_image
+            self.quality_service.check_pil_image(
+                pil_image
             )
         )
 
@@ -1317,17 +1321,24 @@ class ScreeningService:
             )
         )
 
-        fundus_suitability = (
+        fundus_data = (
             quality_result.get(
                 "fundus_suitability"
             )
+            if quality_result
+            else None
         )
 
-        fundus_confidence = (
-            quality_result.get(
-                "fundus_confidence"
+        if isinstance(fundus_data, dict):
+            fundus_suitability = fundus_data.get("is_fundus")
+            fundus_confidence = fundus_data.get("confidence")
+        else:
+            fundus_suitability = fundus_data
+            fundus_confidence = (
+                quality_result.get("fundus_confidence")
+                if quality_result
+                else None
             )
-        )
 
         screening = Screening(
 

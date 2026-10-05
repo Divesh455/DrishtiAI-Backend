@@ -59,7 +59,7 @@ def screening_status():
 # ============================================================
 
 @router.post("/quality")
-async def check_quality(
+def check_quality(
     file: UploadFile = File(...),
 ):
 
@@ -81,7 +81,7 @@ async def check_quality(
 
     try:
 
-        contents = await file.read()
+        contents = file.file.read()
 
         image = Image.open(
             BytesIO(contents)
@@ -123,7 +123,7 @@ async def check_quality(
 # ============================================================
 
 @router.post("/screen")
-async def screen_image(
+def screen_image(
     user_id: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -166,7 +166,7 @@ async def screen_image(
 
     try:
 
-        contents = await file.read()
+        contents = file.file.read()
 
         image = Image.open(
             BytesIO(contents)
@@ -201,7 +201,7 @@ async def screen_image(
         )
 
     # --------------------------------------------------------
-    # Reject unsuitable image
+    # Reject unsuitable image & record in DB
     # --------------------------------------------------------
 
     if not quality_result.get(
@@ -209,9 +209,29 @@ async def screen_image(
         False,
     ):
 
+        screening_id = (
+            screening_service.output_service.create_screening_id()
+        )
+
+        try:
+            screening_service._save_screening(
+                db=db,
+                user_id=user_id,
+                screening_id=screening_id,
+                quality_result=quality_result,
+                classification_result=None,
+                lesion_result=None,
+                evidence=None,
+                images=None,
+                screening_status="rejected",
+            )
+        except Exception as save_exc:
+            print(f"Failed to record rejected screening in DB: {save_exc}")
+
         return {
             "filename": file.filename,
             "user_id": user_id,
+            "screening_id": screening_id,
             "screening_status": "rejected",
             "quality": quality_result,
             "screening": None,

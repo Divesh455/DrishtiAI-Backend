@@ -110,15 +110,27 @@ class EvidenceService:
                         0
                     ),
 
+                "exudates":
+                    lesion_counts.get(
+                        "exudate",
+                        0
+                    ),
+
+                "cotton_wool_spots":
+                    lesion_counts.get(
+                        "cotton_wool_spot",
+                        0
+                    ),
+
                 "hard_exudates":
                     lesion_counts.get(
-                        "hard_exudate",
+                        "exudate",
                         0
                     ),
 
                 "soft_exudates":
                     lesion_counts.get(
-                        "soft_exudate",
+                        "cotton_wool_spot",
                         0
                     )
             },

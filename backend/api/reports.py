@@ -5,7 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 import sys
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
@@ -32,6 +32,8 @@ if str(BASE_DIR) not in sys.path:
 
 from backend.database.database import get_db
 from backend.database.models import Screening
+from backend.services.pdf_service import generate_screening_pdf
+from backend.services.patient_service import fetch_patient_profile
 
 
 # ============================================================
@@ -39,7 +41,7 @@ from backend.database.models import Screening
 # ============================================================
 
 router = APIRouter(
-    prefix="/reports",
+    prefix="/api/v1/reports",
     tags=["Reports"],
 )
 
@@ -345,6 +347,9 @@ def get_screening_report(
         )
     )
 
+    user_id = screening_data.get("user_id")
+    patient_info = fetch_patient_profile(user_id)
+
     decision = (
         _extract_screening_decision(
             screening_data
@@ -476,6 +481,9 @@ def get_screening_report(
                 ),
         },
 
+        "patient":
+            patient_info,
+
         "summary":
             summary,
 
@@ -526,3 +534,75 @@ def get_screening_report(
             ),
         },
     }
+
+
+# ============================================================
+# DOWNLOAD PDF REPORT
+# ============================================================
+
+@router.get(
+    "/{screening_id}/pdf"
+)
+def download_screening_pdf(
+    screening_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Download a clinical PDF report for one screening.
+
+    Example:
+        GET /api/v1/reports/DR-20261004-001/pdf
+    """
+
+    if not screening_id:
+        raise HTTPException(
+            status_code=400,
+            detail="screening_id is required.",
+        )
+
+    try:
+        screening = (
+            db.query(Screening)
+            .filter(
+                Screening.screening_id
+                == str(screening_id)
+            )
+            .first()
+        )
+    except Exception as exc:
+        print(f"PDF query failed: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve screening for PDF generation.",
+        )
+
+    if screening is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Screening not found.",
+        )
+
+    screening_data = _screening_to_dict(screening)
+
+    user_id = screening_data.get("user_id")
+    patient_info = fetch_patient_profile(user_id)
+
+    try:
+        pdf_bytes = generate_screening_pdf(screening_data, patient_info=patient_info)
+    except Exception as exc:
+        print(f"PDF generation error: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate PDF report: {str(exc)}",
+        )
+
+    filename = f"drishti_report_{screening_id}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
