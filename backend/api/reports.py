@@ -5,7 +5,7 @@ from decimal import Decimal
 from pathlib import Path
 import sys
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
@@ -34,11 +34,14 @@ from backend.database.database import get_db
 from backend.database.models import Screening
 from backend.services.pdf_service import generate_screening_pdf
 from backend.services.patient_service import fetch_patient_profile
+from backend.services.gemini_service import GeminiReportService
 
 
 # ============================================================
-# ROUTER
+# SERVICES & ROUTER
 # ============================================================
+
+gemini_service = GeminiReportService()
 
 router = APIRouter(
     prefix="/api/v1/reports",
@@ -297,13 +300,14 @@ def _build_summary(
 )
 def get_screening_report(
     screening_id: str,
+    lang: str = Query(default="English", description="Target language for report narrative generation (Primary: English, Hindi, Marathi)"),
     db: Session = Depends(get_db),
 ):
     """
     Return a structured report for one screening.
 
     Example:
-        GET /reports/DR-20261004-001
+        GET /api/v1/reports/DR-20261004-001?lang=Hindi
     """
 
     if not screening_id:
@@ -349,6 +353,15 @@ def get_screening_report(
 
     user_id = screening_data.get("user_id")
     patient_info = fetch_patient_profile(user_id)
+
+    evidence_dict = _safe_dict(screening_data.get("evidence"))
+    target_language = lang if lang != "English" else (evidence_dict.get("preferred_language") or evidence_dict.get("language") or lang)
+
+    gemini_result = gemini_service.generate_report_narrative(
+        screening_data=screening_data,
+        patient_info=patient_info,
+        language=target_language,
+    )
 
     decision = (
         _extract_screening_decision(
@@ -524,15 +537,8 @@ def get_screening_report(
         "evidence":
             evidence,
 
-        "gemini": {
-            "generated": False,
-            "message": (
-                "Gemini narrative generation is "
-                "not enabled yet. This endpoint "
-                "currently returns deterministic "
-                "structured screening data."
-            ),
-        },
+        "gemini":
+            gemini_result,
     }
 
 
@@ -545,13 +551,14 @@ def get_screening_report(
 )
 def download_screening_pdf(
     screening_id: str,
+    lang: str = Query(default="English", description="Target language for report narrative generation (Primary: English, Hindi, Marathi)"),
     db: Session = Depends(get_db),
 ):
     """
     Download a clinical PDF report for one screening.
 
     Example:
-        GET /api/v1/reports/DR-20261004-001/pdf
+        GET /api/v1/reports/DR-20261004-001/pdf?lang=Hindi
     """
 
     if not screening_id:
@@ -587,8 +594,21 @@ def download_screening_pdf(
     user_id = screening_data.get("user_id")
     patient_info = fetch_patient_profile(user_id)
 
+    evidence_dict = _safe_dict(screening_data.get("evidence"))
+    target_language = lang if lang != "English" else (evidence_dict.get("preferred_language") or evidence_dict.get("language") or lang)
+
+    gemini_result = gemini_service.generate_report_narrative(
+        screening_data=screening_data,
+        patient_info=patient_info,
+        language=target_language,
+    )
+
     try:
-        pdf_bytes = generate_screening_pdf(screening_data, patient_info=patient_info)
+        pdf_bytes = generate_screening_pdf(
+            screening_data,
+            patient_info=patient_info,
+            gemini_narrative=gemini_result,
+        )
     except Exception as exc:
         print(f"PDF generation error: {exc}")
         raise HTTPException(

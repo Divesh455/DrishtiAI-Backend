@@ -14,3 +14,5 @@ cloudinary
 grad-cam==1.5.7
 fundus-lesions-toolkit
 reportlab
+google-genai
+google-generativeai

@@ -1,8 +1,12 @@
 import io
+import os
+from pathlib import Path
 from datetime import datetime
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     HRFlowable,
     Paragraph,
@@ -12,10 +16,46 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+FONT_DIR = BASE_DIR / "backend" / "assets" / "fonts"
+
+DEVANAGARI_FONT_NAME = None
+
+
+def _get_devanagari_font_name() -> str:
+    """
+    Registers and returns a TTF font that supports English, Hindi, and Marathi (Devanagari).
+    """
+    global DEVANAGARI_FONT_NAME
+    if DEVANAGARI_FONT_NAME:
+        return DEVANAGARI_FONT_NAME
+
+    noto_path = FONT_DIR / "NotoSansDevanagari-Regular.ttf"
+    if noto_path.exists():
+        try:
+            pdfmetrics.registerFont(TTFont("NotoDevanagari", str(noto_path)))
+            DEVANAGARI_FONT_NAME = "NotoDevanagari"
+            return DEVANAGARI_FONT_NAME
+        except Exception as exc:
+            print(f"[PDFService] Error registering NotoSansDevanagari font: {exc}")
+
+    win_nirmala = Path("C:/Windows/Fonts/Nirmala.ttf")
+    if win_nirmala.exists():
+        try:
+            pdfmetrics.registerFont(TTFont("NirmalaDevanagari", str(win_nirmala)))
+            DEVANAGARI_FONT_NAME = "NirmalaDevanagari"
+            return DEVANAGARI_FONT_NAME
+        except Exception as exc:
+            print(f"[PDFService] Error registering Nirmala font: {exc}")
+
+    DEVANAGARI_FONT_NAME = "Helvetica"
+    return DEVANAGARI_FONT_NAME
+
 
 def generate_screening_pdf(
     screening_data: dict,
     patient_info: dict = None,
+    gemini_narrative: dict = None,
 ) -> bytes:
     """
     Generates a professional clinical PDF report for a DrishtiAI screening record.
@@ -26,6 +66,8 @@ def generate_screening_pdf(
         Serialized dictionary of a screening record.
     patient_info : dict, optional
         Demographic information (Name, Age, Gender, MRN, etc.) from external patient API.
+    gemini_narrative : dict, optional
+        Gemini Flash AI narrative dictionary containing clinical and patient summaries.
 
     Returns
     -------
@@ -206,7 +248,47 @@ def generate_screening_pdf(
     )
 
     elements.append(summary_table)
-    elements.append(Spacer(1, 15))
+    elements.append(Spacer(1, 12))
+
+    # ---------------------------------------------------------
+    # 2b. Gemini AI Narrative Section (Optional)
+    # ---------------------------------------------------------
+
+    dev_font = _get_devanagari_font_name()
+
+    g_narrative = gemini_narrative or {}
+    if g_narrative.get("generated") and (g_narrative.get("clinical_narrative") or g_narrative.get("patient_summary")):
+        elements.append(Paragraph("Gemini AI Clinical & Patient Interpretation", section_heading))
+
+        ai_box_data = []
+
+        if g_narrative.get("clinical_narrative"):
+            ai_box_data.append([
+                Paragraph("<b>Ophthalmologist Impression:</b>", body_style),
+                Paragraph(g_narrative["clinical_narrative"], ParagraphStyle("AiBody", parent=body_style, fontName=dev_font, fontSize=9.5, leading=13)),
+            ])
+
+        if g_narrative.get("patient_summary"):
+            ai_box_data.append([
+                Paragraph("<b>Patient Guidance:</b>", body_style),
+                Paragraph(g_narrative["patient_summary"], ParagraphStyle("AiBody2", parent=body_style, fontName=dev_font, fontSize=9.5, leading=13)),
+            ])
+
+        ai_table = Table(ai_box_data, colWidths=[150, 390])
+        ai_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F0F9FF")),
+                    ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#BAE6FD")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E0F2FE")),
+                    ("PADDING", (0, 0), (-1, -1), 6),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+
+        elements.append(ai_table)
+        elements.append(Spacer(1, 12))
 
     # ---------------------------------------------------------
     # 3. DR Classification Details

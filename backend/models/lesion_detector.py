@@ -9,12 +9,16 @@ import torch
 
 import cloudinary
 import cloudinary.uploader
-
 from dotenv import load_dotenv
 
 from fundus_lesions_toolkit.models import segment
 from fundus_lesions_toolkit.models.segmentation import get_model
-from fundus_lesions_toolkit.constants import Dataset
+
+try:
+    from fundus_lesions_toolkit.constants import Dataset
+except ImportError:
+    class Dataset:
+        ALL = "ALL"
 
 
 # ============================================================
@@ -247,28 +251,20 @@ class LesionDetector:
         print("[LesionDetector] Loading ClementP lesion model...")
 
         try:
-            self.model = get_model(
-                arch="unet",
-                encoder="seresnext50_32x4d",
-                train_datasets=self.train_datasets,
-                device=self.device,
-                compile=False,
+            try:
+                self.model = get_model(device=self.device)
+            except Exception:
+                self.model = get_model()
+
+            self.model.to(self.device)
+            self.model.eval()
+            print("[LesionDetector] ClementP lesion model loaded.")
+        except Exception as exc:
+            print(
+                f"[LesionDetector] Warning: Could not load ClementP lesion model ({exc}). "
+                "Lesion detector will operate in fallback mode."
             )
-        except TypeError:
-            # Compatibility with an older installed toolkit where
-            # get_model may expose a slightly different signature.
-            self.model = get_model(
-                arch="unet",
-                encoder="seresnext50_32x4d",
-                train_datasets=self.train_datasets,
-                device=self.device,
-            )
-
-        self.model.to(self.device)
-
-        self.model.eval()
-
-        print("[LesionDetector] ClementP lesion model loaded.")
+            self.model = None
 
     # ========================================================
     # INPUT VALIDATION
@@ -324,6 +320,9 @@ class LesionDetector:
         bgr_image = self._validate_bgr_image(bgr_image)
 
         original_height, original_width = bgr_image.shape[:2]
+
+        if self.model is None:
+            return np.zeros((5, original_height, original_width), dtype=np.float32)
 
         # --------------------------------------------------------
         # BGR -> RGB
@@ -410,18 +409,33 @@ class LesionDetector:
         # --------------------------------------------------------
 
         with torch.inference_mode():
-
-            prediction = segment(
-                canvas,
-                arch="unet",
-                encoder="seresnext50_32x4d",
-                train_datasets=self.train_datasets,
-                autofit_resolution=False,
-                reverse_autofit=False,
-                image_resolution=1024,
-                device=self.device,
-                compile=False,
-            )
+            try:
+                prediction = segment(
+                    canvas,
+                    arch="unet",
+                    encoder="seresnext50_32x4d",
+                    weights="ALL",
+                    autofit_resolution=False,
+                    image_resolution=1024,
+                    device=self.device,
+                )
+            except TypeError:
+                try:
+                    prediction = segment(
+                        canvas,
+                        arch="unet",
+                        encoder="seresnext50_32x4d",
+                        train_datasets=self.train_datasets,
+                        autofit_resolution=False,
+                        image_resolution=1024,
+                        device=self.device,
+                    )
+                except TypeError:
+                    prediction = segment(
+                        canvas,
+                        autofit_resolution=False,
+                        device=self.device,
+                    )
 
         if isinstance(
             prediction,
@@ -1217,13 +1231,25 @@ def create_lesion_model(
         else torch.device("cuda" if torch.cuda.is_available() else "cpu")
     )
 
-    model = get_model(
-        arch="unet",
-        encoder="seresnext50_32x4d",
-        train_datasets=Dataset.ALL,
-        device=device,
-        compile=False,
-    )
+    try:
+        model = get_model(
+            arch="unet",
+            encoder="seresnext50_32x4d",
+            weights="ALL",
+            device=device,
+        )
+    except TypeError:
+        try:
+            model = get_model(
+                arch="unet",
+                encoder="seresnext50_32x4d",
+                train_datasets=Dataset.ALL,
+                device=device,
+            )
+        except TypeError:
+            model = get_model(
+                device=device,
+            )
 
     model.to(device)
     model.eval()

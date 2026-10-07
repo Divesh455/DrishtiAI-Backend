@@ -22,6 +22,7 @@ from backend.services.quality_service import (
 from backend.services.screening_service import (
     ScreeningService,
 )
+from backend.services.patient_service import prefetch_patient_profile
 
 
 router = APIRouter(
@@ -126,6 +127,7 @@ def check_quality(
 def screen_image(
     user_id: str = Form(...),
     file: UploadFile = File(...),
+    language: str = Form(default="English", description="Target language for screening report generation (Primary: English, Hindi, Marathi)"),
     db: Session = Depends(get_db),
 ):
 
@@ -150,7 +152,7 @@ def screen_image(
         )
 
     # --------------------------------------------------------
-    # Validate user ID
+    # Validate user ID & prefetch patient profile asynchronously
     # --------------------------------------------------------
 
     if not user_id.strip():
@@ -159,6 +161,9 @@ def screen_image(
             status_code=400,
             detail="user_id is required.",
         )
+
+    # Parallel prefetch to warm up cache
+    prefetch_patient_profile(user_id)
 
     # --------------------------------------------------------
     # Read image
@@ -247,6 +252,7 @@ def screen_image(
             image=image,
             user_id=user_id,
             db=db,
+            language=language,
         )
 
     except ValueError as exc:

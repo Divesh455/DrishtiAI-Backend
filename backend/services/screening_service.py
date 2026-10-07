@@ -1491,11 +1491,14 @@ class ScreeningService:
         user_id: str,
         db: Session,
         screening_id=None,
+        language: str = "English",
     ):
 
         """
         Run complete screening and save the result to Neon.
         """
+
+        from backend.services.ws_manager import ws_manager
 
         # ====================================================
         # VALIDATE USER ID
@@ -1532,6 +1535,13 @@ class ScreeningService:
 
         print(
             "\n[1/5] Checking image quality..."
+        )
+
+        ws_manager.emit(
+            screening_id,
+            step=1, total_steps=5, percent=10,
+            message="Checking image quality & fundus suitability...",
+            status="in_progress",
         )
 
         quality_result = (
@@ -1636,6 +1646,13 @@ class ScreeningService:
             "\n[2/5] Running DR classification..."
         )
 
+        ws_manager.emit(
+            screening_id,
+            step=2, total_steps=5, percent=30,
+            message="Running EfficientNet DR Model & Senanur Safety Check...",
+            status="in_progress",
+        )
+
         classification_result = (
             self._classify_dr(
                 image
@@ -1701,6 +1718,13 @@ class ScreeningService:
             "Grad-CAM++ explanation..."
         )
 
+        ws_manager.emit(
+            screening_id,
+            step=3, total_steps=5, percent=55,
+            message="Generating Grad-CAM++ Heatmaps & Explainability Maps...",
+            status="in_progress",
+        )
+
         gradcam_result = (
             self._generate_gradcam(
                 image=image,
@@ -1740,6 +1764,13 @@ class ScreeningService:
             "\n[4/5] Running ClementP lesion detection..."
         )
 
+        ws_manager.emit(
+            screening_id,
+            step=4, total_steps=5, percent=75,
+            message="Detecting Retinal Lesions (Microaneurysms, Haemorrhages, Exudates)...",
+            status="in_progress",
+        )
+
         lesion_result = (
             self._detect_lesions(
                 image=image,
@@ -1769,6 +1800,13 @@ class ScreeningService:
             "\n[5/5] Building structured evidence..."
         )
 
+        ws_manager.emit(
+            screening_id,
+            step=5, total_steps=5, percent=90,
+            message="Building Clinical Evidence & Referral Recommendation...",
+            status="in_progress",
+        )
+
         evidence = (
             self._build_evidence(
                 classification_result=(
@@ -1783,11 +1821,13 @@ class ScreeningService:
             )
         )
 
-        # Store the final screening decision in the existing
+        # Store the final screening decision and language in the existing
         # Neon JSON evidence column. No schema change.
         evidence[
             "screening_decision"
         ] = screening_decision
+        evidence["language"] = language
+        evidence["preferred_language"] = language
 
         print(
             "Structured evidence created."
@@ -1854,6 +1894,13 @@ class ScreeningService:
             images=images,
 
             screening_status="completed",
+        )
+
+        ws_manager.emit(
+            screening_id,
+            step=5, total_steps=5, percent=100,
+            message="Screening Complete. Results saved successfully.",
+            status="completed",
         )
 
         # ====================================================
