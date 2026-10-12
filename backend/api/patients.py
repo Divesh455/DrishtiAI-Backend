@@ -5,6 +5,8 @@ from decimal import Decimal
 from pathlib import Path
 import sys
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
