@@ -1,4 +1,4 @@
-import os
+﻿import os
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -139,7 +139,7 @@ class LesionDetector:
     """
     ClementP fundus-lesions-toolkit based lesion segmentation.
 
-    The detector preserves the existing DrishtiAI service interface:
+    The detector preserves the existing e-Netra service interface:
 
         detector.detect(
             bgr_image,

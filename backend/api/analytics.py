@@ -15,6 +15,12 @@ if str(BASE_DIR) not in sys.path:
 
 from backend.database.database import get_db
 from backend.database.models import Screening
+from backend.services.i18n_service import (
+    DR_LABELS,
+    REFERRAL_TRANSLATIONS,
+    QUALITY_STATUS_TRANSLATIONS,
+    normalize_language,
+)
 
 router = APIRouter(
     prefix="/api/v1/analytics",
@@ -34,16 +40,24 @@ def get_analytics_overview(
         default=None,
         description="Optional filter for a specific patient/user ID.",
     ),
+    lang: Optional[str] = Query(
+        default=None,
+        description="Target language for localized analytics labels (English, Hindi, Marathi).",
+    ),
+    language: Optional[str] = Query(
+        default=None,
+        description="Alternative target language parameter.",
+    ),
     db: Session = Depends(get_db),
 ):
     """
     Returns population-wide screening metrics, referral decision rates,
-    DR grade distribution, and quality assessment statistics for doctors and administrators.
+    DR grade distribution, and quality assessment statistics for doctors and administrators
+    in the requested language.
 
     Examples:
-        GET /api/v1/analytics/overview
-        GET /api/v1/analytics/overview?days=30
-        GET /api/v1/analytics/overview?user_id=USER_9876
+        GET /api/v1/analytics/overview?lang=Hindi
+        GET /api/v1/analytics/overview?days=30&language=Marathi
     """
 
     try:
@@ -87,8 +101,29 @@ def get_analytics_overview(
         # Lesions accumulated
         total_lesions = sum(r.lesion_count or 0 for r in completed_records)
 
+        norm_lang = normalize_language(lang or language or "English")
+
+        # Localized executive summary sentence
+        if norm_lang == "Hindi":
+            exec_summary = (
+                f"कुल {total_screenings} स्क्रीनिंग में से {refer_count} रोगियों को "
+                f"नेत्र विशेषज्ञ के पास रेफर करने की सलाह दी गई है ({referral_percentage}%)।"
+            )
+        elif norm_lang == "Marathi":
+            exec_summary = (
+                f"एकूण {total_screenings} तपासण्यांपैकी {refer_count} रुग्णांना "
+                f"नेत्रतज्ञांकडे पाठवण्याची शिफारस करण्यात आली आहे ({referral_percentage}%)."
+            )
+        else:
+            exec_summary = (
+                f"Out of {total_screenings} screenings, {refer_count} patients were "
+                f"recommended for specialist referral ({referral_percentage}%)."
+            )
+
         return {
             "status": "success",
+            "language": norm_lang,
+            "summary_narrative": exec_summary,
             "timeframe_days": days if days else "all_time",
             "filter_user_id": user_id,
             "overview": {
@@ -102,6 +137,10 @@ def get_analytics_overview(
                 "non_referable_count": non_referable_count,
                 "total_evaluated": total_classified,
                 "referral_percentage": referral_percentage,
+                "localized_labels": {
+                    "refer": REFERRAL_TRANSLATIONS["REFER"]["label"].get(norm_lang, "REFER"),
+                    "non_referable": REFERRAL_TRANSLATIONS["NON-REFERABLE"]["label"].get(norm_lang, "NON-REFERABLE"),
+                },
             },
             "dr_grade_distribution": {
                 "grade_0_no_dr": grade_0,
@@ -110,11 +149,23 @@ def get_analytics_overview(
                 "grade_3_severe": grade_3,
                 "grade_4_proliferative": grade_4,
                 "unclassified": unclassified,
+                "localized_labels": {
+                    "grade_0": DR_LABELS.get(0, {}).get(norm_lang, "No DR"),
+                    "grade_1": DR_LABELS.get(1, {}).get(norm_lang, "Mild DR"),
+                    "grade_2": DR_LABELS.get(2, {}).get(norm_lang, "Moderate DR"),
+                    "grade_3": DR_LABELS.get(3, {}).get(norm_lang, "Severe DR"),
+                    "grade_4": DR_LABELS.get(4, {}).get(norm_lang, "Proliferative DR"),
+                },
             },
             "quality_assessment": {
                 "good_quality": good_quality,
                 "adequate_quality": adequate_quality,
                 "poor_quality": poor_quality,
+                "localized_labels": {
+                    "good": QUALITY_STATUS_TRANSLATIONS["good"].get(norm_lang, "Good"),
+                    "adequate": QUALITY_STATUS_TRANSLATIONS["adequate"].get(norm_lang, "Adequate"),
+                    "poor": QUALITY_STATUS_TRANSLATIONS["poor"].get(norm_lang, "Poor"),
+                },
             },
             "total_lesions_detected": total_lesions,
         }

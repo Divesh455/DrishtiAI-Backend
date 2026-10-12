@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
@@ -15,7 +15,7 @@ from backend.models.quality_checker import (
 
 class QualityService:
     """
-    Combined image-quality service for DrishtiAI.
+    Combined image-quality service for e-Netra.
 
     Two quality layers are used:
 

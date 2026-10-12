@@ -23,6 +23,11 @@ from backend.services.screening_service import (
     ScreeningService,
 )
 from backend.services.patient_service import prefetch_patient_profile
+from backend.services.gemini_service import GeminiReportService
+from backend.services.i18n_service import (
+    normalize_language,
+    localize_screening_response,
+)
 
 
 router = APIRouter(
@@ -39,6 +44,8 @@ quality_service = QualityService()
 
 screening_service = ScreeningService()
 
+gemini_service = GeminiReportService()
+
 
 # ============================================================
 # STATUS
@@ -48,7 +55,7 @@ screening_service = ScreeningService()
 def screening_status():
 
     return {
-        "service": "DrishtiAI Screening API",
+        "service": "e-Netra Screening API",
         "status": "ready",
         "database": "Neon PostgreSQL",
         "storage": "Cloudinary",
@@ -209,6 +216,8 @@ def screen_image(
     # Reject unsuitable image & record in DB
     # --------------------------------------------------------
 
+    norm_lang = normalize_language(language)
+
     if not quality_result.get(
         "screening_ready",
         False,
@@ -233,13 +242,22 @@ def screen_image(
         except Exception as save_exc:
             print(f"Failed to record rejected screening in DB: {save_exc}")
 
+        reject_msg = {
+            "English": "Image rejected due to poor technical quality or unsuitable fundus view. Please capture a clear fundus image.",
+            "Hindi": "खराब तकनीकी गुणवत्ता या अनुपयुक्त दृश्य के कारण छवि अस्वीकृत कर दी गई। कृपया स्पष्ट फंडस छवि पुनः अपलोड करें।",
+            "Marathi": "कमी तांत्रिक गुणवत्ता किंवा अयोग्य दृश्यामुळे प्रतिमा नाकारली गेली. कृपया स्पष्ट फंडस प्रतिमा पुन्हा अपलोड करा.",
+        }.get(norm_lang, "Image rejected due to poor quality.")
+
         return {
             "filename": file.filename,
             "user_id": user_id,
             "screening_id": screening_id,
             "screening_status": "rejected",
+            "language": norm_lang,
+            "message": reject_msg,
             "quality": quality_result,
             "screening": None,
+            "ai_report": None,
         }
 
     # --------------------------------------------------------
@@ -252,7 +270,7 @@ def screen_image(
             image=image,
             user_id=user_id,
             db=db,
-            language=language,
+            language=norm_lang,
         )
 
     except ValueError as exc:
@@ -277,6 +295,20 @@ def screen_image(
         )
 
     # --------------------------------------------------------
+    # Localize screening result and generate narrative
+    # --------------------------------------------------------
+
+    localized_screening = localize_screening_response(
+        result,
+        language=norm_lang,
+    )
+
+    ai_narrative = gemini_service.generate_report_narrative(
+        screening_data=result,
+        language=norm_lang,
+    )
+
+    # --------------------------------------------------------
     # Final response
     # --------------------------------------------------------
 
@@ -288,6 +320,9 @@ def screen_image(
         "user_id":
             user_id,
 
+        "language":
+            norm_lang,
+
         "screening_status":
             result.get(
                 "status",
@@ -295,10 +330,13 @@ def screen_image(
             ),
 
         "quality":
-            result.get(
+            localized_screening.get(
                 "quality"
             ),
 
         "screening":
-            result,
+            localized_screening,
+
+        "ai_report":
+            ai_narrative,
     }

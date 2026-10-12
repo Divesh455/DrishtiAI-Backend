@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 import torch
 
 
@@ -137,7 +137,7 @@ SPLIT_RANDOM_STATE = 42
 
 def print_config():
     print("=" * 60)
-    print("DrishtiAI Training Configuration")
+    print("e-Netra Training Configuration")
     print("=" * 60)
 
     print(f"Project root        : {PROJECT_ROOT}")

@@ -32,6 +32,13 @@ if str(BASE_DIR) not in sys.path:
 
 from backend.database.database import get_db
 from backend.database.models import Screening
+from backend.services.i18n_service import (
+    DR_LABELS,
+    DR_INTERPRETATIONS,
+    REFERRAL_TRANSLATIONS,
+    QUALITY_STATUS_TRANSLATIONS,
+    normalize_language,
+)
 
 
 # ============================================================
@@ -42,6 +49,40 @@ router = APIRouter(
     prefix="/api/v1/patients",
     tags=["Patients"],
 )
+
+
+def _enrich_screening_dict(screening_dict: dict, language: str = "English") -> dict:
+    """Enrich a screening dictionary with localized labels and advice."""
+    norm_lang = normalize_language(language)
+    dr_grade = screening_dict.get("dr_grade")
+    try:
+        dr_grade_int = int(dr_grade) if dr_grade is not None else None
+        loc_label = DR_LABELS.get(dr_grade_int, {}).get(norm_lang, screening_dict.get("dr_label"))
+        loc_interp = DR_INTERPRETATIONS.get(dr_grade_int, {}).get(norm_lang, "")
+    except Exception:
+        loc_label = screening_dict.get("dr_label")
+        loc_interp = ""
+
+    ev = screening_dict.get("evidence")
+    ev_dict = ev if isinstance(ev, dict) else {}
+    dec_info = ev_dict.get("screening_decision") or {}
+    raw_dec = dec_info.get("decision", "NON-REFERABLE")
+    dec_meta = REFERRAL_TRANSLATIONS.get(raw_dec, REFERRAL_TRANSLATIONS["NON-REFERABLE"])
+    loc_dec = dec_meta["label"].get(norm_lang, raw_dec)
+    loc_reason = dec_meta["reason"].get(norm_lang, dec_info.get("reason", ""))
+
+    q_stat = str(screening_dict.get("quality_status") or "").lower()
+    loc_quality = QUALITY_STATUS_TRANSLATIONS.get(q_stat, {}).get(norm_lang, screening_dict.get("quality_status"))
+
+    screening_dict["localized"] = {
+        "language": norm_lang,
+        "dr_label": loc_label,
+        "interpretation": loc_interp,
+        "referral_decision": loc_dec,
+        "referral_reason": loc_reason,
+        "quality_status": loc_quality,
+    }
+    return screening_dict
 
 
 # ============================================================
@@ -110,6 +151,8 @@ def _screening_to_dict(screening):
 )
 def get_patient_history(
     user_id: str,
+    lang: Optional[str] = Query(default=None, description="Target language (English, Hindi, Marathi)"),
+    language: Optional[str] = Query(default=None, description="Alternative target language parameter"),
     limit: int = Query(
         default=20,
         ge=1,
@@ -119,13 +162,11 @@ def get_patient_history(
     db: Session = Depends(get_db),
 ):
     """
-    Return screening history for one patient/user.
+    Return screening history for one patient/user with localized labels and summaries.
 
     Example:
-        GET /patients/USER123/history
-
-    Optional:
-        GET /patients/USER123/history?limit=50
+        GET /api/v1/patients/USER123/history?lang=Hindi
+        GET /api/v1/patients/USER123/history?language=Marathi
     """
 
     if not user_id:
@@ -133,6 +174,8 @@ def get_patient_history(
             status_code=400,
             detail="user_id is required.",
         )
+
+    norm_lang = normalize_language(lang or language or "English")
 
     try:
         screenings = (
@@ -156,14 +199,13 @@ def get_patient_history(
         )
 
     history = [
-        _screening_to_dict(
-            screening
-        )
+        _enrich_screening_dict(_screening_to_dict(screening), language=norm_lang)
         for screening in screenings
     ]
 
     return {
         "user_id": str(user_id),
+        "language": norm_lang,
         "total": len(history),
         "history": history,
     }
@@ -179,13 +221,15 @@ def get_patient_history(
 def get_patient_screening(
     user_id: str,
     screening_id: str,
+    lang: Optional[str] = Query(default=None, description="Target language (English, Hindi, Marathi)"),
+    language: Optional[str] = Query(default=None, description="Alternative target language parameter"),
     db: Session = Depends(get_db),
 ):
     """
-    Return one screening belonging to a specific patient.
+    Return one screening belonging to a specific patient localized in the target language.
 
     Example:
-        GET /patients/USER123/history/DR-20261004-001
+        GET /api/v1/patients/USER123/history/DR-20261004-001?lang=Hindi
     """
 
     if not user_id:
@@ -199,6 +243,8 @@ def get_patient_screening(
             status_code=400,
             detail="screening_id is required.",
         )
+
+    norm_lang = normalize_language(lang or language or "English")
 
     try:
         screening = (
@@ -228,9 +274,13 @@ def get_patient_screening(
             detail="Screening not found.",
         )
 
+    enriched_screening = _enrich_screening_dict(
+        _screening_to_dict(screening),
+        language=norm_lang,
+    )
+
     return {
         "user_id": str(user_id),
-        "screening": _screening_to_dict(
-            screening
-        ),
+        "language": norm_lang,
+        "screening": enriched_screening,
     }

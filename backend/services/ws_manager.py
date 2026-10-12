@@ -1,7 +1,7 @@
 """
 ws_manager.py
 =============
-WebSocket connection manager and progress event emitter for DrishtiAI.
+WebSocket connection manager and progress event emitter for e-Netra.
 
 Usage
 -----
@@ -86,13 +86,23 @@ class ScreeningProgressManager:
         percent: int,
         message: str,
         status: str = "in_progress",  # in_progress | completed | failed
+        language: str = "English",
     ):
         """
         Thread-safe progress emit from synchronous code.
-        Puts a progress event onto the screening's asyncio queue.
+        Puts a progress event onto the screening's asyncio queue in the target language.
         """
         if not screening_id:
             return
+
+        from backend.services.i18n_service import (
+            PROGRESS_MESSAGES,
+            normalize_language,
+        )
+
+        norm_lang = normalize_language(language)
+        msg_key = 100 if (status == "completed" or percent >= 100) else step
+        localized_msg = PROGRESS_MESSAGES.get(msg_key, {}).get(norm_lang, message)
 
         payload = {
             "event": "screening_progress",
@@ -100,7 +110,8 @@ class ScreeningProgressManager:
             "step": step,
             "total_steps": total_steps,
             "percent": percent,
-            "message": message,
+            "message": localized_msg,
+            "language": norm_lang,
             "status": status,
         }
 

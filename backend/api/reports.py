@@ -129,7 +129,7 @@ def _extract_screening_decision(
 
     For older screening rows that do not contain the newer
     screening_decision field, derive a fallback decision
-    from the stored DrishtiAI grade.
+    from the stored e-Netra grade.
     """
 
     evidence = _safe_dict(
@@ -171,7 +171,7 @@ def _extract_screening_decision(
             "decision": "REFER",
             "referable": True,
             "reason": (
-                "DrishtiAI primary grade is "
+                "e-Netra primary grade is "
                 f"{dr_grade}, which is referable "
                 "(Grade >= 2)."
             ),
@@ -185,28 +185,37 @@ def _extract_screening_decision(
             "This screening record predates the "
             "stored Senanur safety decision, so "
             "the fallback decision is derived "
-            "from the DrishtiAI grade only."
+            "from the e-Netra grade only."
         ),
         "senanur_used": None,
     }
 
 
+from backend.services.i18n_service import (
+    DR_LABELS,
+    DR_INTERPRETATIONS,
+    REFERRAL_TRANSLATIONS,
+    QUALITY_STATUS_TRANSLATIONS,
+    normalize_language,
+)
+
+
 def _build_summary(
     screening_data,
     decision,
+    language: str = "English",
 ):
     """
-    Build a deterministic report summary.
-
-    Gemini is intentionally not called here. The endpoint
-    returns structured facts from the stored screening record.
+    Build a deterministic report summary localized in the target language
+    (English, Hindi, or Marathi).
     """
+    norm_lang = normalize_language(language)
 
     dr_grade = screening_data.get(
         "dr_grade"
     )
 
-    dr_label = screening_data.get(
+    dr_label_raw = screening_data.get(
         "dr_label"
     )
 
@@ -214,7 +223,7 @@ def _build_summary(
         "dr_confidence"
     )
 
-    quality_status = screening_data.get(
+    quality_status_raw = screening_data.get(
         "quality_status"
     )
 
@@ -229,63 +238,43 @@ def _build_summary(
     if dr_grade is None:
         interpretation = (
             "No DR classification is available."
+            if norm_lang == "English"
+            else ("कोई डी.आर. वर्गीकरण उपलब्ध नहीं है।" if norm_lang == "Hindi" else "कोणतेही डी.आर. वर्गीकरण उपलब्ध नाही.")
         )
-
-    elif int(dr_grade) == 0:
-        interpretation = (
-            "No diabetic retinopathy was "
-            "classified by the primary DrishtiAI "
-            "model."
-        )
-
-    elif int(dr_grade) == 1:
-        interpretation = (
-            "Mild diabetic retinopathy was "
-            "classified by the primary DrishtiAI "
-            "model."
-        )
-
-    elif int(dr_grade) == 2:
-        interpretation = (
-            "Moderate diabetic retinopathy was "
-            "classified by the primary DrishtiAI "
-            "model."
-        )
-
-    elif int(dr_grade) == 3:
-        interpretation = (
-            "Severe diabetic retinopathy was "
-            "classified by the primary DrishtiAI "
-            "model."
-        )
-
-    elif int(dr_grade) == 4:
-        interpretation = (
-            "Proliferative diabetic retinopathy "
-            "was classified by the primary "
-            "DrishtiAI model."
-        )
-
+        localized_label = dr_label_raw
     else:
-        interpretation = (
-            "An unrecognized DR grade was stored."
-        )
+        try:
+            dr_grade_int = int(dr_grade)
+            interpretation = DR_INTERPRETATIONS.get(dr_grade_int, {}).get(norm_lang, "")
+            localized_label = DR_LABELS.get(dr_grade_int, {}).get(norm_lang, dr_label_raw)
+        except Exception:
+            interpretation = "An unrecognized DR grade was stored."
+            localized_label = dr_label_raw
+
+    raw_dec_val = decision.get("decision", "NON-REFERABLE")
+    dec_meta = REFERRAL_TRANSLATIONS.get(raw_dec_val, REFERRAL_TRANSLATIONS.get("NON-REFERABLE"))
+    localized_decision = dec_meta["label"].get(norm_lang, raw_dec_val)
+    localized_decision_reason = dec_meta["reason"].get(norm_lang, decision.get("reason", ""))
+
+    q_stat_key = str(quality_status_raw or "").lower()
+    localized_q_status = QUALITY_STATUS_TRANSLATIONS.get(q_stat_key, {}).get(norm_lang, quality_status_raw)
 
     return {
+        "language": norm_lang,
         "interpretation": interpretation,
-        "referral_decision": decision.get(
-            "decision"
-        ),
+        "referral_decision": localized_decision,
+        "referral_decision_code": raw_dec_val,
+        "referral_reason": localized_decision_reason,
         "referable": decision.get(
             "referable"
         ),
         "primary_model": (
-            "DrishtiAI clean EfficientNet-B0"
+            "e-Netra clean EfficientNet-B0"
         ),
         "primary_grade": dr_grade,
-        "primary_label": dr_label,
+        "primary_label": localized_label,
         "primary_confidence": dr_confidence,
-        "image_quality_status": quality_status,
+        "image_quality_status": localized_q_status,
         "detected_lesion_count": lesion_count,
         "screening_status": screening_status,
     }
@@ -300,14 +289,16 @@ def _build_summary(
 )
 def get_screening_report(
     screening_id: str,
-    lang: str = Query(default="English", description="Target language for report narrative generation (Primary: English, Hindi, Marathi)"),
+    lang: Optional[str] = Query(default=None, description="Target language (English, Hindi, Marathi)"),
+    language: Optional[str] = Query(default=None, description="Alternative target language parameter"),
     db: Session = Depends(get_db),
 ):
     """
-    Return a structured report for one screening.
+    Return a structured report for one screening in the requested language.
 
     Example:
         GET /api/v1/reports/DR-20261004-001?lang=Hindi
+        GET /api/v1/reports/DR-20261004-001?language=Marathi
     """
 
     if not screening_id:
@@ -355,7 +346,9 @@ def get_screening_report(
     patient_info = fetch_patient_profile(user_id)
 
     evidence_dict = _safe_dict(screening_data.get("evidence"))
-    target_language = lang if lang != "English" else (evidence_dict.get("preferred_language") or evidence_dict.get("language") or lang)
+    query_lang = lang or language
+    stored_lang = evidence_dict.get("preferred_language") or evidence_dict.get("language")
+    target_language = normalize_language(query_lang or stored_lang or "English")
 
     gemini_result = gemini_service.generate_report_narrative(
         screening_data=screening_data,
@@ -372,7 +365,8 @@ def get_screening_report(
     summary = (
         _build_summary(
             screening_data,
-            decision
+            decision,
+            language=target_language,
         )
     )
 
@@ -476,7 +470,7 @@ def get_screening_report(
         "report_version": "1.0",
 
         "report_type": (
-            "DrishtiAI structured screening report"
+            "e-Netra structured screening report"
         ),
 
         "screening": {
@@ -524,10 +518,23 @@ def get_screening_report(
                     "gradcam_url"
                 ),
             "note": (
-                "Grad-CAM++ represents model "
-                "attention and should not be "
-                "interpreted as proof of an "
-                "individual lesion."
+                {
+                    "English": (
+                        "Grad-CAM++ represents model attention and should not be "
+                        "interpreted as proof of an individual lesion."
+                    ),
+                    "Hindi": (
+                        "Grad-CAM++ एआई मॉडल के ध्यान क्षेत्र को दर्शाता है और इसे "
+                        "व्यक्तिगत घाव के निश्चित प्रमाण के रूप में नहीं माना जाना चाहिए।"
+                    ),
+                    "Marathi": (
+                        "Grad-CAM++ मॉडेलच्या लक्ष केंद्रित केलेल्या भागास दर्शवते आणि त्यास "
+                        "प्रत्यक्ष जखमेचा निश्चित पुरावा मानू नये."
+                    ),
+                }.get(
+                    target_language,
+                    "Grad-CAM++ represents model attention."
+                )
             ),
         },
 
@@ -539,6 +546,9 @@ def get_screening_report(
 
         "gemini":
             gemini_result,
+
+        "language":
+            target_language,
     }
 
 
@@ -551,14 +561,16 @@ def get_screening_report(
 )
 def download_screening_pdf(
     screening_id: str,
-    lang: str = Query(default="English", description="Target language for report narrative generation (Primary: English, Hindi, Marathi)"),
+    lang: Optional[str] = Query(default=None, description="Target language for PDF (English, Hindi, Marathi)"),
+    language: Optional[str] = Query(default=None, description="Alternative target language parameter"),
     db: Session = Depends(get_db),
 ):
     """
-    Download a clinical PDF report for one screening.
+    Download a clinical PDF report for one screening in the target language.
 
     Example:
         GET /api/v1/reports/DR-20261004-001/pdf?lang=Hindi
+        GET /api/v1/reports/DR-20261004-001/pdf?language=Marathi
     """
 
     if not screening_id:
@@ -595,7 +607,9 @@ def download_screening_pdf(
     patient_info = fetch_patient_profile(user_id)
 
     evidence_dict = _safe_dict(screening_data.get("evidence"))
-    target_language = lang if lang != "English" else (evidence_dict.get("preferred_language") or evidence_dict.get("language") or lang)
+    query_lang = lang or language
+    stored_lang = evidence_dict.get("preferred_language") or evidence_dict.get("language")
+    target_language = normalize_language(query_lang or stored_lang or "English")
 
     gemini_result = gemini_service.generate_report_narrative(
         screening_data=screening_data,
@@ -608,6 +622,7 @@ def download_screening_pdf(
             screening_data,
             patient_info=patient_info,
             gemini_narrative=gemini_result,
+            language=target_language,
         )
     except Exception as exc:
         print(f"PDF generation error: {exc}")
@@ -616,7 +631,7 @@ def download_screening_pdf(
             detail=f"Failed to generate PDF report: {str(exc)}",
         )
 
-    filename = f"drishti_report_{screening_id}.pdf"
+    filename = f"drishti_report_{screening_id}_{target_language.lower()}.pdf"
 
     return Response(
         content=pdf_bytes,

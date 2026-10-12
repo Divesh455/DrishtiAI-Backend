@@ -166,10 +166,10 @@ SENANUR_INPUT_SIZE = 384
 class ScreeningService:
 
     """
-    Complete DrishtiAI screening pipeline.
+    Complete e-Netra screening pipeline.
 
     Primary model:
-        DrishtiAI clean EfficientNet-B0
+        e-Netra clean EfficientNet-B0
 
     Secondary safety model:
         Senanur 5-fold ONNX ensemble
@@ -179,7 +179,7 @@ class ScreeningService:
 
     Decision logic:
         1. Quality Checker
-        2. DrishtiAI Grade 0-4
+        2. e-Netra Grade 0-4
         3. Grade >= 2 -> REFER
         4. Grade 0/1 -> Senanur safety check
         5. Senanur Grade >= 2 -> REFER
@@ -207,7 +207,7 @@ class ScreeningService:
 
         print(
             "\nInitializing "
-            "DrishtiAI Screening Service..."
+            "e-Netra Screening Service..."
         )
 
         # ====================================================
@@ -224,7 +224,7 @@ class ScreeningService:
 
         if not Path(dr_model_path).exists():
             raise FileNotFoundError(
-                "DrishtiAI model not found: "
+                "e-Netra model not found: "
                 f"{dr_model_path}"
             )
 
@@ -929,7 +929,7 @@ class ScreeningService:
         severity scores.
 
         This method is intentionally called only when the
-        primary DrishtiAI prediction is Grade 0 or Grade 1.
+        primary e-Netra prediction is Grade 0 or Grade 1.
         """
 
         input_array = (
@@ -1064,7 +1064,7 @@ class ScreeningService:
     ):
 
         """
-        Apply the locked DrishtiAI + Senanur screening rule.
+        Apply the locked e-Netra + Senanur screening rule.
         """
 
         dr_grade = int(
@@ -1087,7 +1087,7 @@ class ScreeningService:
                     True,
 
                 "reason": (
-                    "DrishtiAI predicted "
+                    "e-Netra predicted "
                     f"Grade {dr_grade}, which is "
                     "referable (Grade >= 2)."
                 ),
@@ -1100,7 +1100,7 @@ class ScreeningService:
             }
 
         # ----------------------------------------------------
-        # DrishtiAI Grade 0/1 -> Senanur safety check.
+        # e-Netra Grade 0/1 -> Senanur safety check.
         # ----------------------------------------------------
 
         senanur_result = (
@@ -1119,7 +1119,7 @@ class ScreeningService:
                     True,
 
                 "reason": (
-                    "DrishtiAI predicted Grade "
+                    "e-Netra predicted Grade "
                     f"{dr_grade}, but the Senanur "
                     "safety check predicted "
                     f"Grade {senanur_result['grade']}."
@@ -1140,7 +1140,7 @@ class ScreeningService:
                 False,
 
             "reason": (
-                "DrishtiAI predicted Grade "
+                "e-Netra predicted Grade "
                 f"{dr_grade} and the Senanur "
                 "safety check did not indicate "
                 "referable DR."
@@ -1542,6 +1542,7 @@ class ScreeningService:
             step=1, total_steps=5, percent=10,
             message="Checking image quality & fundus suitability...",
             status="in_progress",
+            language=language,
         )
 
         quality_result = (
@@ -1651,6 +1652,7 @@ class ScreeningService:
             step=2, total_steps=5, percent=30,
             message="Running EfficientNet DR Model & Senanur Safety Check...",
             status="in_progress",
+            language=language,
         )
 
         classification_result = (
@@ -1723,6 +1725,7 @@ class ScreeningService:
             step=3, total_steps=5, percent=55,
             message="Generating Grad-CAM++ Heatmaps & Explainability Maps...",
             status="in_progress",
+            language=language,
         )
 
         gradcam_result = (
@@ -1769,6 +1772,7 @@ class ScreeningService:
             step=4, total_steps=5, percent=75,
             message="Detecting Retinal Lesions (Microaneurysms, Haemorrhages, Exudates)...",
             status="in_progress",
+            language=language,
         )
 
         lesion_result = (
@@ -1805,6 +1809,7 @@ class ScreeningService:
             step=5, total_steps=5, percent=90,
             message="Building Clinical Evidence & Referral Recommendation...",
             status="in_progress",
+            language=language,
         )
 
         evidence = (
@@ -1901,6 +1906,7 @@ class ScreeningService:
             step=5, total_steps=5, percent=100,
             message="Screening Complete. Results saved successfully.",
             status="completed",
+            language=language,
         )
 
         # ====================================================

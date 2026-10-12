@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.screening import router as screening_router
@@ -9,7 +9,7 @@ from backend.api.ws_screening import router as ws_router
 
 
 app = FastAPI(
-    title="DrishtiAI",
+    title="e-Netra",
     description=(
         "Explainable AI-Based Diabetic Retinopathy "
         "Screening System"
@@ -63,7 +63,7 @@ app.include_router(
 @app.get("/")
 def root():
     return {
-        "project": "DrishtiAI",
+        "project": "e-Netra",
         "status": "running",
         "version": "0.3.0",
     }

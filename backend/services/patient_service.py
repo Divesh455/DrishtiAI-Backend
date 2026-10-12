@@ -1,4 +1,4 @@
-import time
+﻿import time
 import os
 import json
 import urllib.request
@@ -98,7 +98,7 @@ class PatientServiceCircuitBreaker:
             target_url = f"{api_url_template.rstrip('/')}/{user_id}"
 
         headers = {
-            "User-Agent": "DrishtiAI-Backend/1.0",
+            "User-Agent": "e-Netra-Backend/1.0",
             "Accept": "application/json",
         }
         api_key = os.getenv("EXTERNAL_PATIENT_API_KEY")

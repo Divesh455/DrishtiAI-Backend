@@ -94,26 +94,30 @@ class GeminiReportService:
         Uses cached result if available for the given screening_id and language.
         """
 
+        from backend.services.i18n_service import (
+            normalize_language,
+            generate_fallback_narrative,
+        )
+
+        norm_lang = normalize_language(language)
+
         # Check Cache first
         screening_id = screening_data.get("screening_id")
-        cache_key = f"{screening_id}:{language}" if screening_id else None
+        cache_key = f"{screening_id}:{norm_lang}" if screening_id else None
         cached_result = self._get_cache(cache_key)
         if cached_result:
             return cached_result
 
         if not self.is_available():
-            return {
-                "generated": False,
-                "model": self.model_name,
-                "language": language,
-                "cached": False,
-                "message": (
-                    "GEMINI_API_KEY is not set in backend/.env. "
-                    "Please add your Gemini API key to enable AI narrative generation."
-                ),
-                "clinical_narrative": None,
-                "patient_summary": None,
-            }
+            fallback = generate_fallback_narrative(
+                screening_data=screening_data,
+                patient_info=patient_info,
+                language=norm_lang,
+            )
+            fallback["message"] = (
+                f"GEMINI_API_KEY is not configured. Deterministic clinical narrative provided in {norm_lang}."
+            )
+            return fallback
 
         # Extract facts for prompt
         p_info = patient_info or {}
@@ -141,12 +145,12 @@ class GeminiReportService:
         cws_count = lesion_evidence.get("cotton_wool_spots", lesion_evidence.get("soft_exudates", 0))
 
         prompt = f"""
-You are an expert AI clinical assistant for DrishtiAI, an Explainable Diabetic Retinopathy (DR) Screening System.
+You are an expert AI clinical assistant for e-Netra, an Explainable Diabetic Retinopathy (DR) Screening System.
 
-Analyze the following validated screening data for a patient and generate two distinct report sections in the requested TARGET LANGUAGE ({language}):
+Analyze the following validated screening data for a patient and generate two distinct report sections in the requested TARGET LANGUAGE ({norm_lang}):
 
 --- TARGET LANGUAGE ---
-{language}
+{norm_lang}
 
 --- PATIENT DEMOGRAPHICS ---
 Name: {p_name}
@@ -169,8 +173,8 @@ Decision Reason: {reason}
 
 --- INSTRUCTIONS ---
 Please respond strictly with a valid JSON object containing exactly two keys:
-1. "clinical_narrative": A concise, formal paragraph (3-4 sentences) written in {language} tailored for an ophthalmologist describing the clinical severity, lesion distribution, and referral urgency.
-2. "patient_summary": A compassionate, clear paragraph (3-4 sentences) written in {language} in simple plain language for the patient explaining what the DR grade means, reassuring them, and advising on next steps.
+1. "clinical_narrative": A concise, formal paragraph (3-4 sentences) written in {norm_lang} tailored for an ophthalmologist describing the clinical severity, lesion distribution, and referral urgency.
+2. "patient_summary": A compassionate, clear paragraph (3-4 sentences) written in {norm_lang} in simple plain language for the patient explaining what the DR grade means, reassuring them, and advising on next steps.
 
 Example JSON output format:
 {{
@@ -179,24 +183,52 @@ Example JSON output format:
 }}
 """
 
-        try:
-            # Try google.genai Client SDK first
+        # Models to attempt in order of preference
+        candidate_models = []
+        for m in [self.model_name, "gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite"]:
+            if m and m not in candidate_models:
+                candidate_models.append(m)
+
+        text = None
+        used_model = candidate_models[0]
+
+        for model_candidate in candidate_models:
             try:
+                # 1. Try google.genai Client SDK
                 from google import genai
                 client = genai.Client(api_key=self.api_key)
                 response = client.models.generate_content(
-                    model=self.model_name,
+                    model=model_candidate,
                     contents=prompt,
                 )
-                text = response.text
-            except Exception:
-                # Fallback to google.generativeai legacy SDK
-                import google.generativeai as legacy_genai
-                legacy_genai.configure(api_key=self.api_key)
-                model = legacy_genai.GenerativeModel(self.model_name)
-                response = model.generate_content(prompt)
-                text = response.text
+                if response and response.text:
+                    text = response.text
+                    used_model = model_candidate
+                    break
+            except Exception as e_genai:
+                # 2. Try legacy google.generativeai SDK
+                try:
+                    import google.generativeai as legacy_genai
+                    legacy_genai.configure(api_key=self.api_key)
+                    model_obj = legacy_genai.GenerativeModel(model_candidate)
+                    response = model_obj.generate_content(prompt)
+                    if response and response.text:
+                        text = response.text
+                        used_model = model_candidate
+                        break
+                except Exception:
+                    continue
 
+        if not text:
+            print(f"[GeminiReportService] Gemini generation failed on candidate models. Using clinical fallback.")
+            fallback = generate_fallback_narrative(
+                screening_data=screening_data,
+                patient_info=patient_info,
+                language=norm_lang,
+            )
+            return fallback
+
+        try:
             # Clean JSON code blocks if present
             cleaned_text = text.strip()
             if cleaned_text.startswith("```json"):
@@ -208,25 +240,34 @@ Example JSON output format:
 
             parsed = json.loads(cleaned_text.strip())
 
+            clinical_text = parsed.get("clinical_narrative")
+            patient_text = parsed.get("patient_summary")
+
+            if not clinical_text or not patient_text:
+                return generate_fallback_narrative(
+                    screening_data=screening_data,
+                    patient_info=patient_info,
+                    language=norm_lang,
+                )
+
             result = {
                 "generated": True,
-                "model": self.model_name,
-                "language": language,
+                "model": used_model,
+                "language": norm_lang,
                 "cached": False,
-                "message": f"Gemini Flash AI narrative successfully generated in {language}.",
-                "clinical_narrative": parsed.get("clinical_narrative"),
-                "patient_summary": parsed.get("patient_summary"),
+                "source": "gemini_ai",
+                "message": f"Gemini AI narrative successfully generated in {norm_lang}.",
+                "clinical_narrative": clinical_text,
+                "patient_summary": patient_text,
             }
 
             self._set_cache(cache_key, result)
             return result
 
         except Exception as exc:
-            print(f"[GeminiReportService] Exception generating narrative: {exc}")
-            return {
-                "generated": False,
-                "model": self.model_name,
-                "message": f"Gemini narrative generation failed: {str(exc)}",
-                "clinical_narrative": None,
-                "patient_summary": None,
-            }
+            print(f"[GeminiReportService] Exception parsing Gemini narrative: {exc}")
+            return generate_fallback_narrative(
+                screening_data=screening_data,
+                patient_info=patient_info,
+                language=norm_lang,
+            )

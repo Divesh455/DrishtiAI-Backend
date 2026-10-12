@@ -1,4 +1,4 @@
-# backend/xai/gradcam.py
+﻿# backend/xai/gradcam.py
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from pytorch_grad_cam.utils.model_targets import (
 
 class GradCAMExplainer:
     """
-    Grad-CAM++ explainability module for DrishtiAI.
+    Grad-CAM++ explainability module for e-Netra.
 
     Purpose:
         Show regions that contributed to the DR classifier

@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy import (
@@ -20,7 +20,7 @@ from backend.database.database import Base
 
 class Screening(Base):
     """
-    Stores one complete DrishtiAI screening result.
+    Stores one complete e-Netra screening result.
 
     One user can have many Screening records.
     """
