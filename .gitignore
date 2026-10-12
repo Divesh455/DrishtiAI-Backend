@@ -20,7 +20,11 @@ venv.bak/
 
 # Large Model Weights & External Models
 weights/*.pth
+!weights/dr_model_clean.pth
+!weights/quality_model.pth
+
 external_models/**/*.onnx
+!external_models/senanur_dr/fold*.onnx
 external_models/**/.cache/
 
 # Datasets & Data Directories

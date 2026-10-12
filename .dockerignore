@@ -1,0 +1,38 @@
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Git metadata
+.git/
+.gitignore
+
+# Environment files & credentials
+.env
+.env.*
+!.env.example
+
+# Unused legacy heavy model
+weights/lesion_model.pth
+
+# Datasets & local outputs
+data/
+backend/outputs/
+*.log
+*.sqlite3
+
+# Test and IDE caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
