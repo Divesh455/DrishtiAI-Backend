@@ -1,5 +1,7 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 fastapi
 uvicorn[standard]
+gradio
 python-multipart
 torch
 torchvision

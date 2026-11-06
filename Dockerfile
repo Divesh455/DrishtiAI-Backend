@@ -4,7 +4,7 @@ FROM python:3.11-slim
 # Prevent Python from writing .pyc files and enable unbuffered stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8000
+    PORT=7860
 
 # Install required system dependencies for OpenCV and ONNX Runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,8 +32,8 @@ COPY weights/ ./weights/
 COPY external_models/ ./external_models/
 COPY training/ ./training/
 
-# Expose port (Render automatically provides $PORT environment variable)
-EXPOSE 8000
+# Expose port (Default 7860 for Hugging Face / Docker)
+EXPOSE 7860
 
-# Start Uvicorn with single worker to keep memory footprint under Render limits
-CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+# Start Uvicorn with single worker to keep memory footprint low
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-7860} --workers 1"]
