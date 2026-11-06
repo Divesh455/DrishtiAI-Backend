@@ -23,10 +23,14 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
 # Copy project files into container
-COPY . .
+# Copy ONLY the folders required for inference
+COPY backend/ ./backend/
+COPY weights/ ./weights/
+COPY external_models/ ./external_models/
+COPY training/ ./training/
 
 # Expose port (Render automatically provides $PORT environment variable)
 EXPOSE 8000

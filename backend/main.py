@@ -1,4 +1,4 @@
-﻿from fastapi import FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.screening import router as screening_router
@@ -54,6 +54,21 @@ app.include_router(
 app.include_router(
     ws_router
 )
+
+
+# --------------------------------------------------
+# STARTUP EVENT
+# --------------------------------------------------
+
+@app.on_event("startup")
+def startup_db_client():
+    try:
+        from backend.database.database import engine, Base
+        import backend.database.models  # noqa: F401
+        Base.metadata.create_all(bind=engine)
+        print("[DB] Tables verified/created successfully.")
+    except Exception as exc:
+        print(f"[DB] Table initialization warning: {exc}")
 
 
 # --------------------------------------------------
